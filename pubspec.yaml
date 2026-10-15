@@ -25,3 +25,4 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+`ndev_dependencies:`n  flutter_launcher_icons: ^0.13.1`n`nflutter_launcher_icons:`n  android: true`n  ios: true`n  image_path: "assets/icon.png"`n  remove_alpha_ios: true
