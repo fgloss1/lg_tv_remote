@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-<dict>
+<dict>`n<key>NSLocalNetworkUsageDescription</key><string>This app needs to find and connect to your LG TV on the local network.</string><key>NSBonjourServices</key><array><string>_googlecast._tcp</string><string>_airplay._tcp</string></array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -27,14 +27,14 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
-	<dict>
+	<dict>`n<key>NSLocalNetworkUsageDescription</key><string>This app needs to find and connect to your LG TV on the local network.</string><key>NSBonjourServices</key><array><string>_googlecast._tcp</string><string>_airplay._tcp</string></array>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 		<key>UISceneConfigurations</key>
-		<dict>
+		<dict>`n<key>NSLocalNetworkUsageDescription</key><string>This app needs to find and connect to your LG TV on the local network.</string><key>NSBonjourServices</key><array><string>_googlecast._tcp</string><string>_airplay._tcp</string></array>
 			<key>UIWindowSceneSessionRoleApplication</key>
 			<array>
-				<dict>
+				<dict>`n<key>NSLocalNetworkUsageDescription</key><string>This app needs to find and connect to your LG TV on the local network.</string><key>NSBonjourServices</key><array><string>_googlecast._tcp</string><string>_airplay._tcp</string></array>
 					<key>UISceneClassName</key>
 					<string>UIWindowScene</string>
 					<key>UISceneConfigurationName</key>
