@@ -1,0 +1,64 @@
+name: iOS Unsigned IPA
+
+# Builds an unsigned iOS .ipa in the cloud and uploads it as a build artifact.
+# Trigger it manually from the Actions tab (Run workflow) or on every push to main.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build unsigned iOS IPA
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS app without code signing
+        run: flutter build ios --release --no-codesign
+
+      - name: Zap build into an unsigned .ipa
+        run: |
+          set -euo pipefail
+
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          IPA_DIR="build/ios/ipa"
+          IPA_NAME="notes_vault.ipa"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::Expected build output not found at $APP_PATH"
+            exit 1
+          fi
+
+          mkdir -p "$IPA_DIR/Payload"
+          cp -R "$APP_PATH" "$IPA_DIR/Payload/"
+
+          # ditto preserves the bundle's symlinks and permissions (plain `zip`
+          # would follow symlinks and produce a broken .app).
+          cd "$IPA_DIR"
+          ditto -c -k --sequesterRsrc --keepParent Payload "$IPA_NAME"
+
+          echo "Created: $IPA_DIR/$IPA_NAME"
+          unzip -l "$IPA_NAME" | head -20
+
+      - name: Upload unsigned .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notes_vault-unsigned-ipa
+          path: build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
