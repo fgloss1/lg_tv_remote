@@ -28,6 +28,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
       - name: Build iOS app without code signing
         run: flutter build ios --release --no-codesign
 
@@ -37,7 +43,7 @@ jobs:
 
           APP_PATH="build/ios/iphoneos/Runner.app"
           IPA_DIR="build/ios/ipa"
-          IPA_NAME="notes_vault.ipa"
+          IPA_NAME="lg_tv_remote.ipa"
 
           if [ ! -d "$APP_PATH" ]; then
             echo "::error::Expected build output not found at $APP_PATH"
@@ -58,7 +64,7 @@ jobs:
       - name: Upload unsigned .ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: notes_vault-unsigned-ipa
+          name: lg_tv_remote-unsigned-ipa
           path: build/ios/ipa/*.ipa
           if-no-files-found: error
           retention-days: 14
