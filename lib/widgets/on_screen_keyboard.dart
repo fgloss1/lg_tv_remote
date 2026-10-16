@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/tv_service.dart';
+import 'tactile.dart';
+import 'tv_feedback.dart';
 
 /// On-screen remote keyboard. Every key press is forwarded to the TV over the
 /// webOS control socket so text can be typed in search boxes and forms.
+///
+/// The keyboard always opens and always echoes the text locally; when no TV is
+/// attached the keys simply report the missing connection instead of going
+/// nowhere.
 class OnScreenKeyboardButton extends StatefulWidget {
   const OnScreenKeyboardButton({super.key});
 
@@ -35,24 +41,45 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
   void _press(String label) {
     final TVService tv = context.read<TVService>();
 
-    switch (label) {
-      case 'ESC':
-        tv.pressBack();
-      case 'DEL':
-        if (_buffer.isNotEmpty) {
-          setState(() => _buffer = _buffer.substring(0, _buffer.length - 1));
-        }
-        tv.sendKey('BACKSPACE');
-      default:
-        setState(() => _buffer += label);
-        tv.sendKey(_charKeys[label] ?? label);
+    if (label == 'ESC') {
+      // Local echo first, then the remote command.
+      setState(() => _buffer = '');
+      dispatchToTv(context, tv, (TVService t) => t.pressBack());
+      return;
     }
+
+    if (label == 'DEL') {
+      setState(() {
+        if (_buffer.isNotEmpty) {
+          _buffer = _buffer.substring(0, _buffer.length - 1);
+        }
+      });
+      dispatchToTv(context, tv, (TVService t) => t.sendKey('BACKSPACE'));
+      return;
+    }
+
+    setState(() => _buffer += label);
+    dispatchToTv(
+      context,
+      tv,
+      (TVService t) => t.sendKey(_charKeys[label] ?? label),
+    );
   }
 
   Future<void> _sendAll() async {
     final TVService tv = context.read<TVService>();
     if (_buffer.isEmpty) return;
+
+    if (!tv.isConnected) {
+      reportNotConnected(context, tv);
+      return;
+    }
+
     await tv.sendText(_buffer);
+    if (mounted) setState(() => _buffer = '');
+  }
+
+  void _clear() {
     setState(() => _buffer = '');
   }
 
@@ -84,35 +111,48 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
   }
 
   Widget _header(bool connected) {
-    return InkWell(
-      onTap: connected ? () => setState(() => _expanded = !_expanded) : null,
+    return TactileButton(
+      semanticLabel: 'Toggle on-screen keyboard',
+      onPressed: () => setState(() => _expanded = !_expanded),
       borderRadius: BorderRadius.circular(18),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: <Widget>[
-            Icon(
-              Icons.keyboard,
-              size: 22,
-              color: connected ? const Color(0xFF00E5FF) : Colors.white24,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'On-screen keyboard',
-                style: TextStyle(
-                  color: connected ? Colors.white : Colors.white24,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
+      color: Colors.white.withValues(alpha: 0.03),
+      padding: const EdgeInsets.all(16),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.keyboard,
+            size: 22,
+            color: connected ? const Color(0xFF00E5FF) : Colors.white38,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'On-screen keyboard',
+              style: TextStyle(
+                color: connected ? Colors.white : Colors.white70,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            Icon(
-              _expanded ? Icons.expand_less : Icons.expand_more,
-              color: connected ? Colors.white38 : Colors.white12,
+          ),
+          if (_buffer.isNotEmpty)
+            TactileButton(
+              semanticLabel: 'Clear typed text',
+              onPressed: _clear,
+              borderRadius: BorderRadius.circular(10),
+              color: Colors.white.withValues(alpha: 0.08),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: const Text(
+                'Clear',
+                style: TextStyle(color: Colors.white70, fontSize: 11),
+              ),
             ),
-          ],
-        ),
+          const SizedBox(width: 6),
+          Icon(
+            _expanded ? Icons.expand_less : Icons.expand_more,
+            color: connected ? Colors.white38 : Colors.white24,
+          ),
+        ],
       ),
     );
   }
@@ -133,7 +173,10 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
               ),
               child: Text(
                 _buffer,
-                style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 14),
+                style: const TextStyle(
+                  color: Color(0xFF00E5FF),
+                  fontSize: 14,
+                ),
               ),
             ),
           ],
@@ -145,7 +188,8 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
                   return Expanded(
                     child: _KeyButton(
                       label: key,
-                      onPressed: connected ? () => _press(key) : null,
+                      connected: connected,
+                      onPressed: () => _press(key),
                     ),
                   );
                 }).toList(),
@@ -157,7 +201,8 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
                 flex: 3,
                 child: _KeyButton(
                   label: 'SPACE',
-                  onPressed: connected ? () => _press(' ') : null,
+                  connected: connected,
+                  onPressed: () => _press(' '),
                 ),
               ),
               const SizedBox(width: 6),
@@ -165,7 +210,8 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
                 flex: 2,
                 child: _KeyButton(
                   label: 'DEL',
-                  onPressed: connected ? () => _press('DEL') : null,
+                  connected: connected,
+                  onPressed: () => _press('DEL'),
                 ),
               ),
               const SizedBox(width: 6),
@@ -174,7 +220,9 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
                 child: _KeyButton(
                   label: 'SEND',
                   accent: const Color(0xFF7C4DFF),
-                  onPressed: connected ? _sendAll : null,
+                  strength: HapticStrength.medium,
+                  connected: connected,
+                  onPressed: _sendAll,
                 ),
               ),
             ],
@@ -188,43 +236,43 @@ class _OnScreenKeyboardButtonState extends State<OnScreenKeyboardButton> {
 class _KeyButton extends StatelessWidget {
   const _KeyButton({
     required this.label,
+    required this.connected,
     required this.onPressed,
     this.accent = const Color(0xFF00E5FF),
+    this.strength = HapticStrength.selection,
   });
 
   final String label;
-  final VoidCallback? onPressed;
+  final bool connected;
+  final VoidCallback onPressed;
   final Color accent;
+  final HapticStrength strength;
 
   @override
   Widget build(BuildContext context) {
-    final bool enabled = onPressed != null;
-
     return Opacity(
-      opacity: enabled ? 1 : 0.35,
-      child: Material(
-        color: Colors.transparent,
+      opacity: connected ? 1 : 0.55,
+      child: TactileButton(
+        semanticLabel: 'Key $label',
+        strength: strength,
+        onPressed: onPressed,
         borderRadius: BorderRadius.circular(9),
-        child: InkWell(
-          onTap: onPressed,
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(9),
-          child: Ink(
-            height: 42,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(9),
-              color: accent.withValues(alpha: 0.10),
-              border: Border.all(color: accent.withValues(alpha: 0.35)),
-            ),
-            child: Center(
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: accent,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                ),
+          color: accent.withValues(alpha: 0.10),
+          border: Border.all(color: accent.withValues(alpha: 0.35)),
+        ),
+        child: SizedBox(
+          height: 42,
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: accent,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
               ),
             ),
           ),

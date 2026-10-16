@@ -4,6 +4,9 @@ import 'package:provider/provider.dart';
 
 import '../services/tv_service.dart';
 import '../widgets/browser/browser.dart';
+import '../widgets/device_picker.dart';
+import '../widgets/tactile.dart';
+import '../widgets/tv_feedback.dart';
 
 /// Built-in browser with a "Cast to TV" action.
 ///
@@ -69,38 +72,39 @@ class _WebCasterScreenState extends State<WebCasterScreen> {
   Future<void> _toggleCast() async {
     if (_casting) {
       setState(() => _casting = false);
-      _toast('Stopped casting');
+      showRemoteToast(context, 'Stopped casting');
       return;
     }
 
     final TVService tv = context.read<TVService>();
     if (!tv.isConnected) {
-      _toast('Connect to your LG TV from the Remote tab first', error: true);
+      showRemoteToast(
+        context,
+        'Connect to your LG TV from the Remote tab first',
+        error: true,
+        action: SnackBarAction(
+          label: 'Choose TV',
+          onPressed: () => showDevicePicker(context),
+        ),
+      );
       return;
     }
 
     final String url = _urlField.text.trim();
-    if (url.isEmpty) return;
+    if (url.isEmpty) {
+      showRemoteToast(context, 'Type a URL to cast', error: true);
+      return;
+    }
 
     try {
       await tv.playMedia(url, 'video');
+      if (!mounted) return;
       setState(() => _casting = true);
-      _toast('Casting to TV — open the app on the television');
+      showRemoteToast(context, 'Casting to TV — open the app on the television');
     } catch (e) {
-      _toast('Cast failed: $e', error: true);
+      if (!mounted) return;
+      showRemoteToast(context, 'Cast failed: $e', error: true);
     }
-  }
-
-  void _toast(String message, {bool error = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: error ? const Color(0xFF7F1D1D) : null,
-        ),
-      );
   }
 
   @override
@@ -331,38 +335,34 @@ class _FloatingCastButton extends StatelessWidget {
             : const Color(0xFF7C4DFF);
 
     return Opacity(
-      opacity: enabled ? 1 : 0.4,
-      child: Material(
-        color: Colors.transparent,
-        shape: const CircleBorder(),
-        elevation: 10,
-        shadowColor: accent.withValues(alpha: 0.6),
-        child: Ink(
+      opacity: enabled ? 1 : 0.6,
+      child: TactileButton(
+        semanticLabel: casting ? 'Stop casting' : 'Cast to TV',
+        strength: HapticStrength.medium,
+        onPressed: onTap,
+        borderRadius: BorderRadius.circular(29),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: <Color>[accent.withValues(alpha: 0.9), accent],
+          ),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: accent.withValues(alpha: 0.55),
+              blurRadius: 18,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: SizedBox(
           width: 58,
           height: 58,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[accent.withValues(alpha: 0.9), accent],
-            ),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: accent.withValues(alpha: 0.55),
-                blurRadius: 18,
-                spreadRadius: 1,
-              ),
-            ],
-          ),
-          child: InkWell(
-            onTap: enabled ? onTap : null,
-            customBorder: const CircleBorder(),
-            child: Icon(
-              casting ? Icons.stop_rounded : Icons.cast,
-              color: Colors.white,
-              size: 26,
-            ),
+          child: Icon(
+            casting ? Icons.stop_rounded : Icons.cast,
+            color: Colors.white,
+            size: 26,
           ),
         ),
       ),
@@ -383,22 +383,16 @@ class _RoundAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: accent.withValues(alpha: 0.14),
+    return TactileButton(
+      semanticLabel: 'Go',
+      onPressed: onTap,
       borderRadius: BorderRadius.circular(12),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          width: 44,
-          height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: accent.withValues(alpha: 0.4)),
-          ),
-          child: Icon(icon, color: accent, size: 20),
-        ),
+      color: accent.withValues(alpha: 0.14),
+      padding: const EdgeInsets.all(12),
+      child: SizedBox(
+        width: 20,
+        height: 20,
+        child: Icon(icon, color: accent, size: 20),
       ),
     );
   }
@@ -413,31 +407,25 @@ class _SiteChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const Color cyan = Color(0xFF00E5FF);
-    return Material(
-      color: Colors.transparent,
+    return TactileButton(
+      semanticLabel: 'Open ${site.label}',
+      onPressed: onTap,
       borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A20),
         borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A20),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: cyan.withValues(alpha: 0.3)),
+        border: Border.all(color: cyan.withValues(alpha: 0.3)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        children: <Widget>[
+          Icon(site.icon, color: cyan, size: 15),
+          const SizedBox(width: 7),
+          Text(
+            site.label,
+            style: const TextStyle(color: Colors.white70, fontSize: 11),
           ),
-          child: Row(
-            children: <Widget>[
-              Icon(site.icon, color: cyan, size: 15),
-              const SizedBox(width: 7),
-              Text(
-                site.label,
-                style: const TextStyle(color: Colors.white70, fontSize: 11),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'media_server.dart';
 import 'net/net.dart';
 
 /// A discovered LG webOS TV on the local network.
@@ -46,10 +47,10 @@ class TVService extends ChangeNotifier {
   /// Bootstrapped app keys for the well known LG streaming apps.
   static const Map<String, String> appIds = <String, String>{
     'YouTube': 'youtube.leanback.v4',
-    'Netflix': 'com.webos.app.livetv',
+    'Netflix': 'com.netflix.app',
     'Prime Video': 'com.amazon.avod',
     'Disney+': 'com.disney.disneyplus',
-    'Browser': 'com.webos.app.livetv',
+    'Browser': 'com.webos.app.browser',
   };
 
   /// webOS remote key codes.
@@ -104,6 +105,7 @@ class TVService extends ChangeNotifier {
   String? _error;
   double _volume = 0.5;
   bool _muted = false;
+  bool _disposed = false;
 
   LgSocket? _ws;
   StreamSubscription<LgSsdpReply>? _ssdpSubscription;
@@ -124,10 +126,22 @@ class TVService extends ChangeNotifier {
   /// True when native sockets are usable (false in the web build).
   bool get isNativeSocketAvailable => netSupported;
 
+  /// True when the phone can serve picked media to the TV.
+  bool get canServeLocalMedia => mediaServerSupported;
+
   List<LgTvDevice> get devices => _devices.values.toList()
     ..sort((LgTvDevice a, LgTvDevice b) => a.name.compareTo(b.name));
 
   // ----------------------------------------------------------------- setup
+
+  /// Notifies listeners unless this service is already disposed.
+  ///
+  /// Discovery, pairing and socket callbacks all resolve after the widget tree
+  /// may have been torn down, and notifying then throws.
+  void _notify() {
+    if (_disposed) return;
+    notifyListeners();
+  }
 
   /// Kicks off an initial scan.
   Future<void> initialize() => startDiscovery();
@@ -144,14 +158,14 @@ class TVService extends ChangeNotifier {
     if (kIsWeb || !netSupported) {
       _error = 'Device discovery is only available on mobile and desktop.';
       _state = TvConnectionState.disconnected;
-      notifyListeners();
+      _notify();
       debugPrint('[LGTV] discovery skipped: no native sockets on this platform');
       return;
     }
 
     _state = TvConnectionState.scanning;
     _error = null;
-    notifyListeners();
+    _notify();
 
     try {
       await _ssdpSubscription?.cancel();
@@ -162,7 +176,7 @@ class TVService extends ChangeNotifier {
       ).listen(_onSsdpReply, onError: (Object e) {
         _error = 'Discovery error: $e';
         _state = TvConnectionState.error;
-        notifyListeners();
+        _notify();
       });
 
       // SSDP uses MX to advertise its window; give replies a moment to land.
@@ -173,7 +187,7 @@ class TVService extends ChangeNotifier {
     } finally {
       if (_state == TvConnectionState.scanning) {
         _state = TvConnectionState.disconnected;
-        notifyListeners();
+        _notify();
       }
     }
   }
@@ -191,7 +205,7 @@ class TVService extends ChangeNotifier {
 
     if (_devices[found.ip] == null) {
       _devices[found.ip] = found;
-      notifyListeners();
+      _notify();
       // Auto-select the first TV discovered.
       if (_device == null) unawaited(connectToDevice(found));
     }
@@ -204,7 +218,7 @@ class TVService extends ChangeNotifier {
     if (kIsWeb || !netSupported) {
       _error = 'TV control is only available on mobile and desktop.';
       _state = TvConnectionState.error;
-      notifyListeners();
+      _notify();
       return;
     }
 
@@ -213,7 +227,7 @@ class TVService extends ChangeNotifier {
     _device = target;
     _state = TvConnectionState.pairing;
     _error = null;
-    notifyListeners();
+    _notify();
 
     try {
       // Step 1: request a pairing grant. The first attempt makes the TV show a
@@ -253,12 +267,12 @@ class TVService extends ChangeNotifier {
         onError: (Object e) {
           _error = 'Socket error: $e';
           _state = TvConnectionState.error;
-          notifyListeners();
+          _notify();
         },
         onDone: () {
           if (_state == TvConnectionState.connected) {
             _state = TvConnectionState.disconnected;
-            notifyListeners();
+            _notify();
           }
         },
       );
@@ -271,15 +285,15 @@ class TVService extends ChangeNotifier {
       });
 
       _state = TvConnectionState.connected;
-      notifyListeners();
+      _notify();
     } on TimeoutException catch (e) {
       _error = 'Timed out while pairing: ${e.message ?? 'no response'}';
       _state = TvConnectionState.error;
-      notifyListeners();
+      _notify();
     } catch (e) {
       _error = 'Pairing failed: $e';
       _state = TvConnectionState.error;
-      notifyListeners();
+      _notify();
     }
   }
 
@@ -289,7 +303,7 @@ class TVService extends ChangeNotifier {
       if (decoded is! Map) return;
       if (decoded['type'] == 'registered') {
         _state = TvConnectionState.connected;
-        notifyListeners();
+        _notify();
       }
     } catch (_) {
       debugPrint('[LGTV] unparsable frame: $event');
@@ -347,7 +361,7 @@ class TVService extends ChangeNotifier {
   /// Toggles TV power. Mirrored locally so the UI reacts immediately.
   Future<void> togglePower() async {
     _powerOn = !_powerOn;
-    notifyListeners();
+    _notify();
     sendKey('POWER');
   }
 
@@ -356,7 +370,7 @@ class TVService extends ChangeNotifier {
 
   void toggleMute() {
     _muted = !_muted;
-    notifyListeners();
+    _notify();
     sendKey('MUTE');
   }
 
@@ -365,12 +379,29 @@ class TVService extends ChangeNotifier {
     final double clamped = level.clamp(0.0, 1.0);
     final int delta = ((clamped - _volume) * 100).round();
     _volume = clamped;
-    notifyListeners();
+    _notify();
 
     final int steps = delta.abs();
     for (int i = 0; i < steps; i++) {
       sendKey(delta > 0 ? 'VOLUMEUP' : 'VOLUMEDOWN');
     }
+  }
+
+  /// Steps the volume by [delta] with a single key press.
+  ///
+  /// Used by the volume rockers, which send one command per tick so holding
+  /// the key ramps the volume the way a physical remote does.
+  void nudgeVolume(double delta) {
+    if (delta == 0) return;
+
+    final double next = (_volume + delta).clamp(0.0, 1.0);
+    if (next == _volume) return;
+
+    final bool up = next > _volume;
+    _volume = next;
+    if (next <= 0) _muted = true;
+    _notify();
+    sendKey(up ? 'VOLUMEUP' : 'VOLUMEDOWN');
   }
 
   /// Air-mouse pointer movement in screen pixels.
@@ -420,11 +451,14 @@ class TVService extends ChangeNotifier {
   /// Launches one of the bundled apps by friendly name.
   void launchApp(String friendlyName) {
     final String? id = appIds[friendlyName];
-    if (id == null) return;
+    if (id == null) {
+      debugPrint('[LGTV] no app id for $friendlyName');
+      return;
+    }
 
+    // webOS expects the application id nested inside `params`.
     _command('launch', <String, dynamic>{
-      'id': id,
-      'params': <String, dynamic>{'target': friendlyName},
+      'params': <String, dynamic>{'id': id},
     });
   }
 
@@ -435,7 +469,7 @@ class TVService extends ChangeNotifier {
   Future<void> playMedia(String uri, String kind) async {
     final LgTvDevice? target = _device;
     if (target == null) {
-      throw StateError('Not connected to a TV');
+      throw StateError('No TV connected — pair with a television first');
     }
 
     final Uri? parsed = Uri.tryParse(uri);
@@ -459,24 +493,54 @@ class TVService extends ChangeNotifier {
     ).timeout(const Duration(seconds: 5));
   }
 
+  /// Publishes a file from the phone over HTTP and asks the TV to play it.
+  ///
+  /// webOS pulls media by URL, so a local file has to be served first. This
+  /// is what makes the Media Cast tiles actually play something.
+  Future<void> playLocalMedia(String path, String kind, {String? mimeType}) async {
+    if (_device == null) {
+      throw StateError('No TV connected — pair with a television first');
+    }
+
+    final String? url =
+        await MediaServer.instance.publish(path, mimeType: mimeType);
+    if (url == null) {
+      throw StateError(
+        'Could not reach the local network to serve the $kind file',
+      );
+    }
+
+    await playMedia(url, kind);
+  }
+
   // ------------------------------------------------------------- lifecycle
 
-  Future<void> disconnect() async {
+  /// Closes the sockets without touching the notifier.
+  ///
+  /// Split out of [disconnect] because [dispose] runs it too, and notifying
+  /// after disposal throws.
+  Future<void> _closeSockets() async {
     await _wsSubscription?.cancel();
     _wsSubscription = null;
     await _ws?.close();
     _ws = null;
     await _ssdpSubscription?.cancel();
     _ssdpSubscription = null;
+  }
+
+  Future<void> disconnect() async {
+    await _closeSockets();
+    if (_disposed) return;
     _clientKey = null;
     _device = null;
     _state = TvConnectionState.disconnected;
-    notifyListeners();
+    _notify();
   }
 
   @override
   void dispose() {
-    unawaited(disconnect());
+    _disposed = true;
+    unawaited(_closeSockets());
     super.dispose();
   }
 }

@@ -3,6 +3,9 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:provider/provider.dart';
 
 import '../services/tv_service.dart';
+import '../widgets/device_picker.dart';
+import '../widgets/tactile.dart';
+import '../widgets/tv_feedback.dart';
 
 /// Screen mirroring control surface: start/stop, resolution and latency preset.
 class ScreenMirrorScreen extends StatefulWidget {
@@ -45,27 +48,26 @@ class _ScreenMirrorScreenState extends State<ScreenMirrorScreen> {
     if (!_mirroring) {
       final TVService tv = context.read<TVService>();
       if (!tv.isConnected) {
-        _toast('Connect to your LG TV from the Remote tab first', error: true);
+        showRemoteToast(
+          context,
+          'Connect to your LG TV from the Remote tab first',
+          error: true,
+          action: SnackBarAction(
+            label: 'Choose TV',
+            onPressed: () => showDevicePicker(context),
+          ),
+        );
         return;
       }
     }
 
     setState(() => _mirroring = !_mirroring);
-    _toast(_mirroring
-        ? 'Mirroring started at ${_resolution.label}'
-        : 'Mirroring stopped');
-  }
-
-  void _toast(String message, {bool error = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: error ? const Color(0xFF7F1D1D) : null,
-        ),
-      );
+    showRemoteToast(
+      context,
+      _mirroring
+          ? 'Mirroring started at ${_resolution.label}'
+          : 'Mirroring stopped',
+    );
   }
 
   @override
@@ -147,71 +149,68 @@ class _MirrorToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color accent = mirroring ? const Color(0xFF00E5FF) : const Color(0xFF7C4DFF);
 
-    return Material(
-      color: Colors.transparent,
+    return TactileButton(
+      semanticLabel: mirroring ? 'Stop mirroring' : 'Start mirroring',
+      strength: HapticStrength.medium,
+      pressScale: 0.97,
+      onPressed: onToggle,
       borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        onTap: onToggle,
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 30),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(22),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: <Color>[
-                accent.withValues(alpha: mirroring ? 0.28 : 0.16),
-                const Color(0xFF0F0F12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[
+            accent.withValues(alpha: mirroring ? 0.28 : 0.16),
+            const Color(0xFF0F0F12),
+          ],
+        ),
+        border: Border.all(color: accent.withValues(alpha: 0.5)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 30),
+      child: Column(
+        children: <Widget>[
+          SizedBox(
+            height: 76,
+            width: 76,
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                if (mirroring)
+                  const SpinKitRipple(color: Color(0xFF00E5FF), size: 74)
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: accent.withValues(alpha: 0.4),
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                Icon(
+                  mirroring ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                  color: Colors.white,
+                  size: 34,
+                ),
               ],
             ),
-            border: Border.all(color: accent.withValues(alpha: 0.5)),
           ),
-          child: Column(
-            children: <Widget>[
-              SizedBox(
-                height: 76,
-                width: 76,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: <Widget>[
-                    if (mirroring)
-                      const SpinKitRipple(color: Color(0xFF00E5FF), size: 74)
-                    else
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: accent.withValues(alpha: 0.4),
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    Icon(
-                      mirroring ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                      color: Colors.white,
-                      size: 34,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                mirroring ? 'Stop mirroring' : 'Start mirroring',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                '${resolution.label}  •  ${resolution.width}x${resolution.height}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-            ],
+          const SizedBox(height: 14),
+          Text(
+            mirroring ? 'Stop mirroring' : 'Start mirroring',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
+          const SizedBox(height: 5),
+          Text(
+            '${resolution.label}  •  ${resolution.width}x${resolution.height}',
+            style: const TextStyle(color: Colors.white54, fontSize: 12),
+          ),
+        ],
       ),
     );
   }
@@ -235,42 +234,37 @@ class _ResolutionRow extends StatelessWidget {
         return Expanded(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Material(
-              color: Colors.transparent,
+            child: TactileButton(
+              semanticLabel: 'Resolution ${r.label}',
+              onPressed: () => onChanged(r),
               borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: () => onChanged(r),
+              decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(14),
-                child: Ink(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    color: isSelected
-                        ? accent.withValues(alpha: 0.18)
-                        : const Color(0xFF1A1A20),
-                    border: Border.all(
-                      color: isSelected ? accent : Colors.white12,
-                      width: isSelected ? 1.6 : 1,
+                color: isSelected
+                    ? accent.withValues(alpha: 0.18)
+                    : const Color(0xFF1A1A20),
+                border: Border.all(
+                  color: isSelected ? accent : Colors.white12,
+                  width: isSelected ? 1.6 : 1,
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                children: <Widget>[
+                  Text(
+                    r.label,
+                    style: TextStyle(
+                      color: isSelected ? accent : Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  child: Column(
-                    children: <Widget>[
-                      Text(
-                        r.label,
-                        style: TextStyle(
-                          color: isSelected ? accent : Colors.white70,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${r.height}p',
-                        style: const TextStyle(color: Colors.white38, fontSize: 10),
-                      ),
-                    ],
+                  const SizedBox(height: 4),
+                  Text(
+                    '${r.height}p',
+                    style: const TextStyle(color: Colors.white38, fontSize: 10),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -297,61 +291,56 @@ class _PresetList extends StatelessWidget {
 
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: Colors.transparent,
+          child: TactileButton(
+            semanticLabel: p.label,
+            onPressed: () => onChanged(p),
             borderRadius: BorderRadius.circular(14),
-            child: InkWell(
-              onTap: () => onChanged(p),
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(14),
-              child: Ink(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  color: isSelected
-                      ? violet.withValues(alpha: 0.16)
-                      : const Color(0xFF1A1A20),
-                  border: Border.all(
-                    color: isSelected ? violet : Colors.white12,
+              color: isSelected
+                  ? violet.withValues(alpha: 0.16)
+                  : const Color(0xFF1A1A20),
+              border: Border.all(
+                color: isSelected ? violet : Colors.white12,
+              ),
+            ),
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  p.icon,
+                  color: isSelected ? violet : Colors.white38,
+                  size: 20,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        p.label,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : Colors.white70,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        p.description,
+                        style: const TextStyle(color: Colors.white38, fontSize: 10),
+                      ),
+                    ],
                   ),
                 ),
-                child: Row(
-                  children: <Widget>[
-                    Icon(
-                      p.icon,
-                      color: isSelected ? violet : Colors.white38,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            p.label,
-                            style: TextStyle(
-                              color: isSelected ? Colors.white : Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            p.description,
-                            style: const TextStyle(color: Colors.white38, fontSize: 10),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      isSelected
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                      color: isSelected ? violet : Colors.white24,
-                      size: 18,
-                    ),
-                  ],
+                Icon(
+                  isSelected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: isSelected ? violet : Colors.white24,
+                  size: 18,
                 ),
-              ),
+              ],
             ),
           ),
         );

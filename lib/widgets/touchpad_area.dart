@@ -2,11 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../services/tv_service.dart';
+import 'device_picker.dart';
+import 'tactile.dart';
 
 /// Air-mouse / touchpad surface.
 ///
 /// Swipes move the on-screen pointer, a tap sends a click, and a long press
 /// behaves like a right click.
+///
+/// A tap is only forwarded when the finger barely moved, so dragging the
+/// pointer no longer fires a stray click on the television.
 class TouchpadArea extends StatefulWidget {
   const TouchpadArea({super.key});
 
@@ -15,8 +20,12 @@ class TouchpadArea extends StatefulWidget {
 }
 
 class _TouchpadAreaState extends State<TouchpadArea> {
+  /// Movement below this many pixels still counts as a tap.
+  static const double _tapSlop = 14;
+
   Offset? _lastPointer;
   Offset _cursor = Offset.zero;
+  double _travel = 0;
   bool _pointerDown = false;
   bool _engaged = false;
 
@@ -25,6 +34,7 @@ class _TouchpadAreaState extends State<TouchpadArea> {
       _lastPointer = event.position;
       _pointerDown = true;
       _engaged = true;
+      _travel = 0;
     });
   }
 
@@ -33,6 +43,7 @@ class _TouchpadAreaState extends State<TouchpadArea> {
 
     final Offset delta = event.position - _lastPointer!;
     _lastPointer = event.position;
+    _travel += delta.distance;
 
     // Scale to a sensible remote-control speed.
     final Offset scaled = delta * 1.6;
@@ -45,23 +56,56 @@ class _TouchpadAreaState extends State<TouchpadArea> {
   }
 
   void _onPointerUp(PointerUpEvent event) {
+    final bool wasTap = _travel <= _tapSlop;
     setState(() {
       _lastPointer = null;
       _pointerDown = false;
     });
-    context.read<TVService>().pointerClick();
+
+    if (!wasTap) return;
+
+    final TVService tv = context.read<TVService>();
+    triggerHaptic(HapticStrength.light);
+    if (tv.isConnected) {
+      tv.pointerClick();
+      return;
+    }
+
+    // Offline a tap still answers: it points at the device picker.
+    _reportOffline();
   }
 
   void _onLongPress() {
     // Right click / context menu on most LG apps.
-    context.read<TVService>().sendKey('MENU');
+    triggerHaptic(HapticStrength.medium);
+    _dispatch((TVService tv) => tv.sendKey('MENU'));
   }
 
   void _recenter() {
+    triggerHaptic(HapticStrength.light);
     setState(() {
       _cursor = Offset.zero;
       _lastPointer = null;
     });
+    _reportOffline();
+  }
+
+  /// Runs [action] against the TV, or explains how to connect when offline.
+  void _dispatch(void Function(TVService tv) action) {
+    final TVService tv = context.read<TVService>();
+    if (tv.isConnected) {
+      action(tv);
+      return;
+    }
+    _reportOffline();
+  }
+
+  /// Offline taps still answer: they point at the device picker.
+  void _reportOffline() {
+    final TVService tv = context.read<TVService>();
+    if (tv.isConnected) return;
+    triggerHaptic(HapticStrength.medium);
+    showDevicePicker(context);
   }
 
   @override
@@ -137,7 +181,7 @@ class _TouchpadAreaState extends State<TouchpadArea> {
                           child: Text(
                             connected
                                 ? 'Swipe to move cursor • Tap to select'
-                                : 'Connect to your TV to use the air mouse',
+                                : 'Not connected — tap to pick a TV',
                             style: TextStyle(
                               color: connected ? Colors.white38 : Colors.white24,
                               fontSize: 11,
@@ -151,16 +195,15 @@ class _TouchpadAreaState extends State<TouchpadArea> {
               ),
             ),
 
-            if (connected)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: _MiniButton(
-                  icon: Icons.my_location,
-                  onTap: _recenter,
-                  tooltip: 'Recenter',
-                ),
+            Positioned(
+              top: 8,
+              right: 8,
+              child: _MiniButton(
+                icon: connected ? Icons.my_location : Icons.link,
+                onTap: _recenter,
+                tooltip: connected ? 'Recenter' : 'Choose a TV',
               ),
+            ),
 
             if (!_engaged)
               const Positioned.fill(
@@ -186,17 +229,13 @@ class _MiniButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: tooltip ?? '',
-      child: Material(
+      child: TactileButton(
+        semanticLabel: tooltip,
+        onPressed: onTap,
+        borderRadius: BorderRadius.circular(24),
         color: Colors.white.withValues(alpha: 0.06),
-        shape: const CircleBorder(),
-        child: InkWell(
-          onTap: onTap,
-          customBorder: const CircleBorder(),
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: Icon(icon, size: 16, color: const Color(0xFF00E5FF)),
-          ),
-        ),
+        padding: const EdgeInsets.all(8),
+        child: Icon(icon, size: 16, color: const Color(0xFF00E5FF)),
       ),
     );
   }

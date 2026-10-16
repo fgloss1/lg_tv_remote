@@ -6,6 +6,7 @@ import 'screens/media_cast_screen.dart';
 import 'screens/screen_mirror_screen.dart';
 import 'screens/web_caster_screen.dart';
 import 'services/tv_service.dart';
+import 'widgets/tactile.dart';
 
 void main() => runApp(const LGTVRemoteApp());
 
@@ -135,8 +136,11 @@ class _NavItem extends StatelessWidget {
     final Color color = isSelected ? accent : muted;
 
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
+      child: TactileButton(
+        semanticLabel: label,
+        strength: HapticStrength.selection,
+        pressScale: 0.9,
+        onPressed: onTap,
         borderRadius: BorderRadius.circular(14),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),

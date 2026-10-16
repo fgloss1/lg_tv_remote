@@ -36,6 +36,15 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pick photos and videos to cast to your LG TV.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to cast to your LG TV.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app needs to find and connect to your LG TV on your local network.</string>
 	<key>NSBonjourServices</key>
